@@ -1,0 +1,32 @@
+#!/usr/bin/make -f
+#############################################################
+# Copyright 1998 VMware, Inc.  All rights reserved. -- VMware Confidential
+#############################################################
+####
+####  VMware vmxnet Makefile to be distributed externally
+####
+####
+
+vm_check_build = $(shell if $(CC) $(CPPFLAGS) $(CFLAGS) $(CFLAGS_KERNEL) \
+	$(EXTRA_CFLAGS) -Iinclude2/asm/mach-default -DKBUILD_BASENAME=\"$(DRIVER)\" \
+	-Werror -S -o /dev/null -xc $(1) \
+	> /dev/null 2>&1; then echo "$(2)"; else echo "$(3)"; fi)
+
+CC_WARNINGS := -Wall -Wstrict-prototypes
+
+CC_OPTS := $(GLOBAL_DEFS) $(CC_WARNINGS)
+
+CC_OPTS += -DVMW_USING_KBUILD
+
+INCLUDE := -I.
+
+EXTRA_CFLAGS := $(CC_OPTS) $(INCLUDE)
+
+EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/autoconf/skblin.c, -DVMW_SKB_LINEARIZE_2618, )
+
+obj-m += $(DRIVER).o
+
+clean:
+	rm -rf $(wildcard $(DRIVER).mod.c $(DRIVER).ko \
+	       .tmp_versions Module.symvers Modules.symvers \
+	       $(foreach dir,./,$(addprefix $(dir),.*.cmd .*.o.flags *.o)))
