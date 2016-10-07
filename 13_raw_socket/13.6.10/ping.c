@@ -1,17 +1,23 @@
 /*ping.c*/ 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/ip_icmp.h>
 #include <unistd.h>
-#include <signal.h>
-#include <arpa/inet.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <stdio.h>
 #include <string.h> /*bzero*/
-#include <netdb.h>
+#include <signal.h>
 #include <pthread.h>
+
+#include <sys/socket.h>
+#include <netinet/in.h>		// 	socket  AF_INET SOCK_RAW  IPPROTO_ICMP
+#include <netinet/ip.h>		// 	struct ip
+#include <netinet/ip_icmp.h>// 	struct icmp  ICMP_ECHO ICMP_ECHOREPLY
+#include <arpa/inet.h>		// 	inet_ntoa(struct in_addr>>字符串) inet_addr(字符串>>长整型)
+							//  struct in_addr 是 struct sockaddr_in的成员 sin_addr 类型
+							//  struct sockaddr_in 是 struct sockaddr 在以太网的具体实现
+#include <netdb.h>			// 	getprotobyname gethostbyname
+
+
+
 /*保存已经发送包的状态值*/
 typedef struct pingm_pakcet{
 	struct timeval tv_begin;	/*发送的时间*/
@@ -34,6 +40,7 @@ static void icmp_usage();
 #define BUFFERSIZE 72					/*发送缓冲区大小*/
 static char send_buff[BUFFERSIZE];
 static char recv_buff[2*K];	/*为防止接收溢出，接收缓冲区设置大一些*/
+//static char recv_buff[2]; // 按IP分组来接受  如果分片了重组后给到raw socket buffer太小只接收部分,丢弃其他
 static struct sockaddr_in dest;		/*目的地址*/
 static int rawsock = 0;					/*发送和接收线程需要的socket描述符*/
 static pid_t pid=0;						/*进程PID*/
@@ -64,18 +71,18 @@ int main(int argc, char *argv[])
 	}
 	/*获取协议类型ICMP*/
 	protocol = getprotobyname(protoname);
-	if (protocol == NULL)
-	{
+	if (protocol == NULL){
 		perror("getprotobyname()");
 		return -1;
+	}else{
+		printf("getprotobyname %s %d", protocol->p_name, protocol->p_proto);
 	}
 	/*复制目的地址字符串*/
 	memcpy(dest_str,  argv[1], strlen(argv[1])+1);
 	memset(pingpacket, 0, sizeof(pingm_pakcet) * 128);
 	/*socket初始化*/
 	rawsock = socket(AF_INET, SOCK_RAW,  protocol->p_proto);
-	if(rawsock < 0)
-	{
+	if(rawsock < 0){
 		perror("socket");
 		return -1;
 	}
@@ -93,13 +100,22 @@ int main(int argc, char *argv[])
 	{
 		/*输入的是DNS地址*/
 		host = gethostbyname(argv[1]);
-		if(host == NULL)
-		{
+		if(host == NULL){
 			perror("gethostbyname");
 			return -1;
 		}
-		/*将地址复制到dest中*/
+
+		/*host->h_addr_list数组 保存所有这个域名的ip地址
+		 * 		h_addr         指向第一个ip地址
+		 *  将第一个地址复制到dest中*/
 		memcpy((char *)&dest.sin_addr, host->h_addr, host->h_length);
+
+		printf("gethostbyname %s (%d.%d.%d.%d) ", argv[1],
+					(dest.sin_addr.s_addr&0x000000FF)>>0,
+					(dest.sin_addr.s_addr&0x0000FF00)>>8,
+					(dest.sin_addr.s_addr&0x00FF0000)>>16,
+					(dest.sin_addr.s_addr&0xFF000000)>>24 );
+
 	}
 	else		/*为IP地址字符串*/
 	{
@@ -118,6 +134,7 @@ int main(int argc, char *argv[])
 	alive = 1;						/*初始化为可运行*/
 	pthread_t send_id, recv_id;		/*建立两个线程，用于发送和接收*/
 	int err = 0;
+	// 即使不发ICMP包的话，也会收到其他进程或者其他主机 对本进程主机发送的任何ICMP包
 	err = pthread_create(&send_id, NULL, icmp_send, NULL);		/*发送*/
 	if(err < 0)
 	{
@@ -191,15 +208,33 @@ static int icmp_unpack(char *buf,int len)
 	int rtt;
 	
 	ip=(struct ip *)buf; 					/*IP头部*/
+
+	printf(	"ip header: version %d header len %d "
+			"total len %d ttl %d proto %d src %s dst %s \n" ,
+				ip->ip_v , ip->ip_hl * 4 ,
+				ntohs(ip->ip_len) , ip->ip_ttl  ,
+				ip->ip_p ,
+				inet_ntoa(ip->ip_src) ,
+				inet_ntoa(ip->ip_dst) );
+
 	iphdrlen=ip->ip_hl*4;					/*IP头部长度*/
 	icmp=(struct icmp *)(buf+iphdrlen);		/*ICMP段的地址*/
 	len-=iphdrlen;
-											/*判断长度是否为ICMP包*/
-	if( len<8) 
+
+	if( len<8) 		/*判断长度是否为ICMP包*/
 	{
-		printf("ICMP packets\'s length is less than 8\n");
+		printf("ICMP packets\'s length is less than 8, dump data:\n");
+		int i = 0  ;
+		for(; i < len ; i++ ){
+			printf("[%d] 0x%0x\n" , i , buf[iphdrlen + i]);
+		}
 		return -1;
 	}
+	printf(	"icmp header: type %d code %d "
+			" pid %d , seq %d \n" ,
+				icmp->icmp_type, icmp->icmp_code ,
+				icmp->icmp_id , icmp->icmp_seq );
+
 	/*ICMP类型为ICMP_ECHOREPLY并且为本进程的PID*/
 	if( (icmp->icmp_type==ICMP_ECHOREPLY) && (icmp->icmp_id== pid) )	
 	{
@@ -278,7 +313,7 @@ static void* icmp_send(void *argv)
 			gettimeofday( &packet->tv_begin, NULL);	/*发送时间*/
 		}
 		
-		icmp_pack((struct icmp *)send_buff, packet_send, &tv, 64 );
+		icmp_pack((struct icmp *)send_buff, packet_send, &tv, 64 );// 64是ICMP总长度 不包含IP头部
 		/*打包数据*/
 		size = sendto (rawsock,  send_buff, 64,  0,		/*发送给目的地址*/
 			(struct sockaddr *)&dest, sizeof(dest) );
@@ -287,6 +322,8 @@ static void* icmp_send(void *argv)
 			perror("sendto error");
 			continue;
 		}
+		break;
+
 		packet_send++;					/*计数增加*/
 		/*每隔1s，发送一个ICMP回显请求包*/
 		sleep(1);
@@ -301,6 +338,10 @@ static void *icmp_recv(void *argv)
 	tv.tv_usec = 200;
 	tv.tv_sec = 0;
 	fd_set  readfd;
+	struct sockaddr_in from;
+	unsigned int len_from = sizeof(from);
+
+
 	/*当没有信号发出一直接收数据*/
 	while(alive)
 	{
@@ -319,18 +360,24 @@ static void *icmp_recv(void *argv)
 			default:
 				{
 					/*接收数据*/
-					int size = recv(rawsock, recv_buff,sizeof(recv_buff), 
-					0);
-					if(errno == EINTR)
-					{
+					//int size = recv(rawsock, recv_buff,sizeof(recv_buff),  0);
+					int size = recvfrom( rawsock, recv_buff, sizeof(recv_buff),
+													MSG_TRUNC, // 如果报文大于缓冲区 依旧返回报文实际大小
+													(struct sockaddr*)&from,
+													&len_from);
+					if(errno == EINTR){
 						perror("recvfrom error");
 						continue;
-					}
-					/*解包，并设置相关变量*/
-					ret = icmp_unpack(recv_buff, size);
-					if(ret == -1)
-					{
+					}else if(size > sizeof(recv_buff) ){		/*缓冲区太小了*/
+						printf("recefrom buffer too small\n");
 						continue;
+						// 如果不设置MSG_TRUNC
+					}else{
+						/*解包，并设置相关变量*/
+						ret = icmp_unpack(recv_buff, size);
+						if(ret == -1){
+							continue;
+						}
 					}
 				}
 				break;
