@@ -108,9 +108,8 @@ static void ip_pack(struct ip * ipheader , struct sockaddr_in src , struct socka
 	ipheader->ip_hl = IP_HEADER_LEN /4 ;
 	ipheader->ip_tos = 0 ;
 	ipheader->ip_len = htons( total_len );
-	static unsigned short ip_id = 0 ;
-	ipheader->ip_id = htons(ip_id) ; // static 在多线程中 在进程中共享 可能不安全
-	ip_id ++ ;
+
+	ipheader->ip_id = htons(syscall(SYS_gettid)&0x0000FFFF) ;
 	unsigned short off = IP_DF | (0 & IP_OFFMASK ) ; // do not Fragmant
 	ipheader->ip_off = htons (off);
 	ipheader->ip_ttl = 128 ;
