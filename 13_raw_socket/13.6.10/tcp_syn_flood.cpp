@@ -10,7 +10,7 @@
 #include <sys/time.h>
 #include <stdio.h>
 #include <string.h> 		// bzero
-#include <signal.h>
+#include <signal.h>			// signal
 #include <pthread.h>
 #include <stdlib.h>			// void srand(unsigned seed) ; int rand(void);
 #include <sys/syscall.h>	// syscall(SYS_gettid)
