@@ -239,7 +239,7 @@ int main(int argc, char*argv[])
 		sendto(ctx.socket , ef  ,ETH_HLEN + sizeof(struct arppacket) ,0, (const struct sockaddr *)&to, sizeof(struct sockaddr_pkt));
 
 		printf("send one arp! %zd ret = %d %d %s \n", sizeof(struct arppacket) ,ret ,errno ,strerror(errno));
-		// ret = -1 107 Transport endpoint is not connected
+		// 如果不设置 地址  出现错误 ret = -1 107 Transport endpoint is not connected
 		sleep(10);
 	}
 
