@@ -105,8 +105,38 @@ int main(int argc, char**argv) {
 	 * recv from 4 : 13 , ABCDEFGHIJKLM
 	 * recv from 4 : 1 , N
 	 *
+	 *
+	 * blog.csdn.net/ctthuangcheng/article/details/9498569
+	 *
+	 * 当由紧急指针指向的实际数据字节到达接收端TCP，
+	 * 该数据字节既可能被"拉出带外"，也可能被"留在带内"，即在线留存。
+	 *
+	 * "SO_OOBINLINE"套接字选项默认情况下是禁止的，对于这样的接收端套接字，
+	 * 该数据字节并不放入"套接字接收缓冲区"，而是被放入该连接的一个独立的"单字节带外缓冲区"。
+	 * 这种情况下，接收进程不能指定"MSG_OOB"标志读入该数据字节
+	 * 相反，接收进程通过检查该连接的"带外标记"以获悉"何时"访问到这个数据字节
+	 *
+	 * 接收进程从这个"单字节缓冲区"读入数据的唯一方法是
+	 * 指定MSG_OOB标志调用recv，recvfrom或recvmsg
+	 *
+	 * 如果新的OOB字节在旧的OOB字节被读取之前就到达，旧的OOB字节会被丢弃
+	 *
+	 * 错误:
+	 * 1.如果接收进程请求读入"带外数据"（通过指定MSG_OOB标志）
+	 * 		但是对端尚未发送任何带外数据，读入操作将返回EINVAL
+	 *
+	 * 2.在接收进程已被告知对端发送了一个"带外字节"（通过SIGURG或select手段）的前提下
+	 *		如果接收进程读入该字节，但是该"字节尚未到达"，读入操作将返回"EWOULDBLOCK"
+	 *		接收进程此时能做的仅仅是从套接字接收缓冲区读入数据
+	 *		(要是没有存放这些数据的空间,可能还得丢弃他们,需要"立刻腾出协议栈buffer")
+	 *		以便在该缓冲区中腾出空间，继而允许对端TCP发送出那个带外字节
+	 *
+	 * 3.如果接收进程试图多次读入同一个带外字节，读入操作将返回EINAVL
+	 *
+	 * 4.如果接收进程已经开启SO_OOBINLINE套接字选项，后来试图通过指定的MSG_OOB标志读入带外数据
+	 * 	 读入操作将返回EINVAL
 	 */
-#if 1
+#if 0
 	int on = 1 ;
 	ret = setsockopt(server, SOL_SOCKET, SO_OOBINLINE, &on, sizeof(on));
 	if( ret < 0 ){
@@ -266,12 +296,12 @@ int main(int argc, char**argv) {
 						 * 暗示了如果不用exception fds处理接收的话
 						 * 这里就应该判断出atmark后使用recv OOB_MSG接收
 						 *
-						 * 如果exceptin中处理了 就不用在这里rece MSG_OOB
-						 * 否则会遇上错误 22 Invalid argument
+						 * 但是如果exceptin中读取了"带外字节" 就不用在这里rece MSG_OOB
+						 * 否则会遇上错误 "22 Invalid argument"
 						 *
-						 * 如果设置SO_OOBINLINE 带外数据放入正常流中
-			        	 * sockatmark 暗示下一个read返回的 第一个字节 是带外数据
-			        	 * 但是 SO_OOBINLINE 不需要 MSG_OOB标记来接收(错误22 Invalid argument)
+						 * 如果设置SO_OOBINLINE "带外数据放入正常流中"
+			        	 * sockatmark "暗示下一个read返回的 第一个字节" 是"带外字节"
+			        	 * 但是 SO_OOBINLINE "不需要MSG_OOB标记来接收"(错误22 Invalid argument)
 			        	 *
 						 */
 			      		int mark1 = sockatmark(fd);
