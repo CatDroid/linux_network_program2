@@ -176,8 +176,9 @@ int main(int argc, char**argv) {
 			perror("write error");
 				// 服务端拒绝了 就会close掉socket --> 客户端处于CLOSE_WAIT 服务端处于FIN_WAIT2
 				// 客户端read					 --> 客户端还是处于CLOSE_WAIT 立刻返回read=0 EOF 应该关闭端口
-				// 客户端write  			     --> 客户端处于LAST_ACK-->CLOSE 服务端处于TIME_WAIT 但是write成功
-				// 如果还write 				 --> 会导致SIGPIPE信号 杀掉进程 已经write返回EPIPE错误
+				//									在收到远端FIN报文的时候  本地端协议栈会把buffer里面的数据发送完出去 最后再发送FIN_ACK应答FIN报文 本地socket处于CLOSE_WAIT状态
+				// 客户端write  			     --> 客户端处于CLOSE_WAIT-->CLOSE(客户端发送了数据给服务端，服务端回复RST报文) 服务端处于TIME_WAIT 但是write成功
+				// 如果还write 				 --> (socket因为RST报文收到 会把socket设置程CLOSE)会导致SIGPIPE信号 杀掉进程 已经write返回EPIPE错误
 			break;
 		} else {
 

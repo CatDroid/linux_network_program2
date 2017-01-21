@@ -12,7 +12,7 @@
 #include <arpa/inet.h>		// 	inet_ntoa(struct in_addr>>字符串) inet_addr(字符串>>长整型)
 							//  struct in_addr 是 struct sockaddr_in的成员 sin_addr 类型
 							//  struct sockaddr_in 是 struct sockaddr 在以太网的具体实现
-
+#include <sys/socket.h>		// socket
 
 #define IP_FOUND "IP_FOUND"        			/*IP发现命令*/
 #define IP_FOUND_ACK "IP_FOUND_ACK"			/*IP发现应答命令*/
@@ -107,9 +107,9 @@ int main(int argc, char *argv[]){
 			case -1:
 				printf("select error:%d,%s\n" , errno , strerror(errno));
 				// 如果按下Ctrl+C select会返回EINTR Interrupted system call
-				//if(errno == EINTR){
-				//	exitflag = 1 ;
-				//}
+				if(errno == EINTR){
+					exitflag = 1 ;
+				}
 				break;
 			case 0:
 				printf("timeout\n");

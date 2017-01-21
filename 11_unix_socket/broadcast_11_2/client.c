@@ -11,13 +11,14 @@
 #include <arpa/inet.h>		// 	inet_ntoa(struct in_addr>>字符串) inet_addr(字符串>>长整型)
 							//  struct in_addr 是 struct sockaddr_in的成员 sin_addr 类型
 							//  struct sockaddr_in 是 struct sockaddr 在以太网的具体实现
-
+#include <sys/socket.h>		// socket
 
 #define IP_FOUND "IP_FOUND"       			/*IP发现命令*/
 #define IP_FOUND_ACK "IP_FOUND_ACK"			/*IP发现应答命令*/
 #define MCAST_PORT 10010
 //#define IFNAME "eth0"
-#define IFNAME "usb0"
+//#define IFNAME "usb0"
+#define IFNAME "p2p0"
 // 在这个网卡(网络接口)发送出去的广播 不会在这个网卡(网络接口)上再获取回来
 // 也就是网卡(网络接口)发送出去的广播 本网卡(网络接口)是不能接收到的
 // 但是lo本地回环这个网络接口是可以获取到的
